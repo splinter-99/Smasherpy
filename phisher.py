@@ -1,5 +1,8 @@
+from signal import SIGINT
+
 import requests
 import multiprocessing
+from pathlib import Path
 from time import (
     ctime,
     sleep,
@@ -57,6 +60,7 @@ home_dir = popen("echo $HOME").read()
 tiny_url = 'https://tinyurl.com'
 slow_text = False
 
+error_log = None
 
 @click.command()
 @click.option("--mode", "-m", "mode", prompt="Enter the mode", help="Choose phishing attack vector",
@@ -76,7 +80,7 @@ def main_menu(mode, fancy):
 
 
 def email_menu():
-    sprint(text=f'{success}Email! This is path to your home directory: {home_dir}'
+    sprint(text=f'{success}Email! This is path to your home directory: {home_dir}')
 
 def sms_menu():
     sprint(text=f'{success}Sms! This is path to your home directory: {home_dir}')
@@ -88,7 +92,7 @@ def shell(command, capture_output=False):
     try:
         return run(command, shell=True, captur_output=capture_output)
     except Exception as e:
-        append(e, error_file)
+        append(e, error_log)
 
 
 # Run task in background supressing output by setting stdout and stderr to devnull
@@ -96,17 +100,17 @@ def silent_shell(command, stdout=PIPE, stderr=DEVNULL, cwd="./"):
     try:
         return Popen(command, shell=True, stdout=stdout, stderr=stderr, cwd=cwd)
     except Exception as e:
-        append(e, error_file)
+        append(e, error_log)
 
 
 def append(file_name, text):
-    with open(filename, "a") as file:
+    with open(file_name, "a") as file:
         file.write(str(text) + "\n")
 
 
 def sprint(text):
     global slow_text
-    if slow_text
+    if slow_text:
         for letter in text + '\n':
             stdout.write(letter)
             stdout.flush()
@@ -119,43 +123,43 @@ def sprint(text):
 
 
 # Install packages
-def installer(package, package_name=None):
-    if package_name is None:
-        package_name = package
-    for pacman in ["pkg", "apt", "apt-get", "apk", "yum", "dnf", "brew", "pacman", "yay"]:
-        # Check if package manager is present but php isn't present
-        if is_installed(pacman):
-            if not is_installed(package):
-                sprint(f"\n{info}Installing {package}{nc}")
-                if pacman == "pacman":
-                    shell(f"sudo {pacman} -S {package_name} --noconfirm")
-                elif pacman == "apk":
-                    if is_installed("sudo"):
-                        shell(f"sudo {pacman} add {package_name}")
-                    else:
-                        shell(f"{pacman} add -y {package_name}")
-                elif is_installed("sudo"):
-                    shell(f"sudo {pacman} install -y {package_name}")
-                else:
-                    shell(f"{pacman} install -y {package_name}")
-                break
-    if is_installed("brew"):
-        if not is_installed("cloudflare"):
-            shell("brew install cloudflare/cloudflare/cloudflared")
-        if not is_installed("localxpose"):
-            shell("brew install localxpose")
+# def installer(package, package_name=None):
+#     if package_name is None:
+#         package_name = package
+#     for pacman in ["pkg", "apt", "apt-get", "apk", "yum", "dnf", "brew", "pacman", "yay"]:
+#         # Check if package manager is present but php isn't present
+#         if is_installed(pacman):
+#             if not is_installed(package):
+#                 sprint(f"\n{info}Installing {package}{nc}")
+#                 if pacman == "pacman":
+#                     shell(f"sudo {pacman} -S {package_name} --noconfirm")
+#                 elif pacman == "apk":
+#                     if is_installed("sudo"):
+#                         shell(f"sudo {pacman} add {package_name}")
+#                     else:
+#                         shell(f"{pacman} add -y {package_name}")
+#                 elif is_installed("sudo"):
+#                     shell(f"sudo {pacman} install -y {package_name}")
+#                 else:
+#                     shell(f"{pacman} install -y {package_name}")
+#                 break
+#     if is_installed("brew"):
+#         if not is_installed("cloudflare"):
+#             shell("brew install cloudflare/cloudflare/cloudflared")
+#         if not is_installed("localxpose"):
+#             shell("brew install localxpose")
 
 
-def requirements():
-    installer("php")
-    if is_installed("apt") and not is_installed("pkg"):
-        installer("ssh", "openssh-client")
-    else:
-        installer("ssh", "openssh")
-    for package in packages:
-        if not is_installed(package):
-            sprint(f"{error}{package} cannot be installed. Install it manually!{nc}")
-            exit(1)
+# def requirements():
+#     installer("php")
+#     if is_installed("apt") and not is_installed("pkg"):
+#         installer("ssh", "openssh-client")
+#     else:
+#         installer("ssh", "openssh")
+#     for package in packages:
+#         if not is_installed(package):
+#             sprint(f"{error}{package} cannot be installed. Install it manually!{nc}")
+#             exit(1)
 
 
 def is_running(process):
@@ -185,25 +189,22 @@ def server():
         pass
 
 
-def check_url_shortener(url, expected_destination):
-    retry = 3
-    while retry != 0
-        response = requests.head(url, allow_redirects=True)
-        if response.status_code == 401:
-            retry -= 1
-            continue
-        final_url = response.url
-        if final_url == expected_destination:
-            return 0 
-        elif tiny_url in final_url:
-            return -1  # Something is wrong with the redirect, maybe user is getting warning message
-    return -2          # Something is wrong with the connection, most likely won't be the issue. Use different vpn conn!
-    time.sleep(60)
+def setup_log_file():
+    global error_log
+    logs_dir = Path(".logs")
+    logs_file = logs_dir / "logs"
 
-
+    # Check if the directory and file exist
+    if not logs_dir.exists() or not logs_file.exists():
+        # Create the directory and file
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        logs_file.touch()
+    error_log = logs_file
 
 if __name__ == "__main__":
+    setup_log_file()
+    print(error_log)
     server_process = multiprocessing.Process(target=server)
     url_checker_process = multiprocessing.Process(target=check_url_shortener)
-    menu()
+    main_menu()
 
