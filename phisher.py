@@ -1,3 +1,5 @@
+import requests
+import multiprocessing
 from time import (
     ctime,
     sleep,
@@ -8,7 +10,7 @@ from sys import (
     argv,
     stdout,
     version_info
-) 
+)
 from subprocess import (
     DEVNULL,
     PIPE,
@@ -16,28 +18,28 @@ from subprocess import (
     STDOUT,
     call,
     run
-)  
+)
 from os import popen, kill
 import click
 import json
 from typing import List
 
 # Color snippets
-black="\033[0;30m"
-red="\033[0;31m"
-bred="\033[1;31m"
-green="\033[0;32m"
-bgreen="\033[1;32m"
-yellow="\033[0;33m"
-byellow="\033[1;33m"
-blue="\033[0;34m"
-bblue="\033[1;34m"
-purple="\033[0;35m"
-bpurple="\033[1;35m"
-cyan="\033[0;36m"
-bcyan="\033[1;36m"
-white="\033[0;37m"
-nc="\033[00m"
+black = "\033[0;30m"
+red = "\033[0;31m"
+bred = "\033[1;31m"
+green = "\033[0;32m"
+bgreen = "\033[1;32m"
+yellow = "\033[0;33m"
+byellow = "\033[1;33m"
+blue = "\033[0;34m"
+bblue = "\033[1;34m"
+purple = "\033[0;35m"
+bpurple = "\033[1;35m"
+cyan = "\033[0;36m"
+bcyan = "\033[1;36m"
+white = "\033[0;37m"
+nc = "\033[00m"
 
 ask = f"{green}[{white}?{green}] {byellow}"
 success = f"{yellow}[{white}√{yellow}] {green}"
@@ -52,15 +54,17 @@ processes = [ "php", "ssh", "cloudflared", "loclx", "localxpose" ]
 
 
 home_dir = popen("echo $HOME").read()
+tiny_url = 'https://tinyurl.com'
 slow_text = False
 
-@click.command()
-@click.option("--mode","-m","mode", prompt="Enter the mode", help="Choose phishing attack vector", type=click.Choice(['SMS', 'EMAIL'], case_sensitive=False), required=True)
-@click.option("--fancy", is_flag=True, default=False, help="Toogle on slow text")
 
+@click.command()
+@click.option("--mode", "-m", "mode", prompt="Enter the mode", help="Choose phishing attack vector",
+              type=click.Choice(['SMS', 'EMAIL'], case_sensitive=False), required=True)
+@click.option("--Fancy", is_flag=True, default=False, help="Toogle slow text")
 def main_menu(mode, fancy):
     global slow_text 
-    slow_text = fancy 
+    slow_text = fancy
     if mode.lower() == "email":
         email_menu()
     elif mode.lower() == "sms":
@@ -69,26 +73,25 @@ def main_menu(mode, fancy):
     ping.wait()
     output, error = ping.communicate()
     print(output.decode())
-    
+
 
 def email_menu():
-    sprint(text=f'{ask}Email! This is path to your home directory: {home_dir}')
-    sprint(text=f'{success}Email! This is path to your home directory: {home_dir}')
-
+    sprint(text=f'{success}Email! This is path to your home directory: {home_dir}'
 
 def sms_menu():
-    sprint(text=f'{ask}Sms! This is path to your home directory: {home_dir}')
+    sprint(text=f'{success}Sms! This is path to your home directory: {home_dir}')
+
 
 # Helper functions
 
 def shell(command, capture_output=False):
     try:
-        return run(command, shell=True, capture_output=capture_output)
+        return run(command, shell=True, captur_output=capture_output)
     except Exception as e:
         append(e, error_file)
 
 
-# Run task in background, supressing output by setting stdout and stderr to devnull
+# Run task in background supressing output by setting stdout and stderr to devnull
 def silent_shell(command, stdout=PIPE, stderr=DEVNULL, cwd="./"):
     try:
         return Popen(command, shell=True, stdout=stdout, stderr=stderr, cwd=cwd)
@@ -102,14 +105,14 @@ def append(file_name, text):
 
 
 def sprint(text):
-    global slow_text 
-    if slow_text:
+    global slow_text
+    if slow_text
         for letter in text + '\n':
             stdout.write(letter)
             stdout.flush()
             sleep(0.05)
     else:
-        for letter in text +'\n':
+        for letter in text + '\n':
             stdout.write(letter)
             stdout.flush()
             sleep(0.01)
@@ -124,9 +127,9 @@ def installer(package, package_name=None):
         if is_installed(pacman):
             if not is_installed(package):
                 sprint(f"\n{info}Installing {package}{nc}")
-                if pacman=="pacman":
+                if pacman == "pacman":
                     shell(f"sudo {pacman} -S {package_name} --noconfirm")
-                elif pacman=="apk":
+                elif pacman == "apk":
                     if is_installed("sudo"):
                         shell(f"sudo {pacman} add {package_name}")
                     else:
@@ -162,8 +165,6 @@ def is_running(process):
     return False
 
 
-# Process killer using os.kill()
-
 def killer():
     # Previous instances of these should be stopped
     for process in processes:
@@ -179,7 +180,30 @@ def killer():
                 print()
 
 
+def server():
+    while True:
+        pass
+
+
+def check_url_shortener(url, expected_destination):
+    retry = 3
+    while retry != 0
+        response = requests.head(url, allow_redirects=True)
+        if response.status_code == 401:
+            retry -= 1
+            continue
+        final_url = response.url
+        if final_url == expected_destination:
+            return 0 
+        elif tiny_url in final_url:
+            return -1  # Something is wrong with the redirect, maybe user is getting warning message
+    return -2          # Something is wrong with the connection, most likely won't be the issue. Use different vpn conn!
+    time.sleep(60)
+
+
+
 if __name__ == "__main__":
-    killer()
-    main_menu()
+    server_process = multiprocessing.Process(target=server)
+    url_checker_process = multiprocessing.Process(target=check_url_shortener)
+    menu()
 
