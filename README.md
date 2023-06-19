@@ -12,7 +12,9 @@
 ###Murloc Inc
 
 ##  Setup
-```python todo```
+```todo```
 
 ## Install
-```shell todo```
+```todo```
+
+## Contributions

