@@ -6,20 +6,21 @@ update_redirect() - updates your redirect url in case of host failure
 
 """
 
-import random
-import time
-from multiprocessing import Process, Queue
-import click
-import sys
-
 import requests
 import logging
-
 import json
-import string
 import os
+import time
+from sys import stdout
+from multiprocessing import Process
+
+from retry import retry
+import click
 
 import settings
+import helper
+from tinyurl import ErrorHandler
+import beauty
 
 home_dir = os.getenv('HOME')
 BASE_URL = "https://api.tinyurl.com"
@@ -38,27 +39,38 @@ class TinyUrl:
         self.rebuild_headers()
         self.create_redirect_url(redirect)
 
-    def create_redirect_url(self, target_url):
-        request_url = f"{BASE_URL}/create"
-        unique_alias = self.generate_unique_string()
-        data = {'url': target_url,
-                'alias': unique_alias
-                }
+    @retry(tries=3, delay=3, jitter=(1, 3))
+    def create_redirect_url(self, redirect_url):
+        alias = helper.generator.generate_unique_string(self.existing_strings)
+        self.existing_strings.add(alias)
 
+        request_url = f"{BASE_URL}/create"
+        data = {'url': redirect_url,
+                'alias': alias
+                }
+        logging.info(f'Creating redirect url...')
         response = requests.post(url=request_url, headers=self.headers, data=json.dumps(data))
-        if response.status_code == 200:
+        if ErrorHandler.handle_tiny_url_response(self, response) == 0:
             data = response.json()['data']
             self.domain = data['domain']
             self.alias = data['alias']
+            self.redirect_url = redirect_url
             self.tiny_url = f'https://{self.domain}/{self.alias}'
-            self.redirect_url = target_url
-            return 0
+            logging.info(f'Your tinyurl redirect url is created successfully: {self.tiny_url}')
+        else:
+            raise Exception
 
-        elif response.status_code == 401:
-            return -1
-        print(response.status_code)
-        return -2
+    @retry(tries=3, delay=5, jitter=(1, 3))
+    def delete_existing_url(self):
+        request_url = f"{BASE_URL}/alias/{self.domain}/{self.alias}"
+        logging.info(f'Deleting tinyurl with alias: {self.alias}...')
+        response = requests.delete(request_url, headers=self.headers)
+        if ErrorHandler.handle_tiny_url_response(self, response) == 0:
+            self.clear_url_fields()
+        else:
+            raise Exception
 
+    @retry(tries=3, delay=3, jitter=(1, 3))
     def update_redirect(self, url):
         request_url = f"{BASE_URL}/change"
 
@@ -70,53 +82,44 @@ class TinyUrl:
 
         response = requests.patch(url=request_url, headers=self.headers, data=json.dumps(data))
 
-        if response.status_code == 200:
+        if ErrorHandler.handle_tiny_url_response(self, response) == 0:
             data = response.json()['data']
             self.redirect_url = data['url']
-            return 0
-
-        if response.status_code == 401:  # Token is faulty
-            return -1
-
-        print(response.text)
-        print(response.headers)
-        return -2  # Peculiar error
-
-    def generate_unique_string(self, length=8):
-        random_string = ''.join(random.sample(string.ascii_letters, length))
-        while random_string in self.existing_strings:
-            random_string = ''.join(random.sample(string.ascii_letters, length))
-
-        self.existing_strings.add(random_string)
-        return random_string
+        else:
+            raise Exception
 
     def check_status(self):
         try:
             response = requests.head(self.tiny_url, allow_redirects=True)
-            if response.url[8:12] == 'tiny':
-                logging.critical('Preview feature...')
-                exit(-1)
-
-            return 'Final url: ' + response.url + ' Response status code: ' + str(response.status_code)
+            if 'tiny' in response.url:
+                logging.error('Preview is blocking the user to see the site immediately...')
+                logging.info(f'Saving current alias: {self.alias} for later reinitialization')
+                logging.info(f'Redirected to url: {response.url}, response status code: {str(response.status_code)}')
+                self.delete_existing_url()
+                self.create_redirect_url(self.redirect_url)
+            elif response.url == self.redirect_url:
+                logging.info('Redirected to the correct redirect url!')
         except requests.TooManyRedirects:
-            return 'Too many redirects!'
-
+            logging.error('Too many redirects!')
 
     def rebuild_headers(self):
         self.headers = {'Authorization': f'Bearer {self.auth_token}', 'Content-Type': 'application/json',
                         'User-Agent': 'Google Chrome'}
 
+    def clear_url_fields(self):
+        self.alias = None
+        self.domain = None
+        self.tiny_url = None
+
     def __str__(self):
-        return f'token: {self.auth_token}\n----------------------------------------------------\n'\
-            + f'tiny_url: {self.tiny_url}\n-----------------------------------------------------\n' +\
-            f'redirect: {self.redirect_url}'
+        return f'token: {self.auth_token}\n\ntiny_url: {self.tiny_url}\n\nredirect: {self.redirect_url}'
 
 
 def run_service(tiny_url):
     while True:
-        status = tiny_url.check_status()
-        logging.info('Status: ' + status)
-        time.sleep(5)
+        tiny_url.check_status()
+        time.sleep(10)
+
 
 @click.command()
 @click.option('--redirect', '-r', prompt='Enter redirect url', help='Enter redirect url for your tinyurl',
@@ -127,9 +130,10 @@ def main(redirect):
     service_process = Process(target=run_service, args=(tiny_url,))
     service_process.daemon = True
     service_process.start()
+    print('Enter command [update <url> - Update redirect url\nclient - Display tinyurl client info]\n')
 
     while True:
-        user_input = input('Enter command [update <url> - Update redirect url, client - display tinyurl client info] \n\n')
+        user_input = input()
         command = user_input.split()
         if command[0] == 'update':
             if len(command) > 1:
@@ -138,7 +142,7 @@ def main(redirect):
             else:
                 logging.error('e.g command: update <url>')
         elif command[0] == 'client':
-            logging.info(str(tiny_url))
+            beauty.slow_print(tiny_url.__str__(), 0.02)
 
         if not service_process.is_alive():
             break
@@ -149,17 +153,21 @@ def main(redirect):
 
 
 def initialize_loggers():
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s'
-    )
+    logger = logging.getLogger('')
+    logger.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+
+    # Console Handler
+    console_handler = logging.StreamHandler(stdout)
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
+    # File Handler
     file_handler = logging.FileHandler(f'{home_dir}/.logs/logfile.log')
     file_handler.setLevel(logging.INFO)
-    logging.getLogger('').addHandler(file_handler)
-
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.INFO)
-    logging.getLogger('').addHandler(console_handler)
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
 
 
 if __name__ == '__main__':
