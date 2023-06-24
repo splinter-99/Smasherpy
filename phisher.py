@@ -57,18 +57,17 @@ processes = [ "php", "ssh", "cloudflared", "loclx", "localxpose" ]
 
 
 home_dir = popen("echo $HOME").read()
-tiny_url = 'https://tinyurl.com'
-slow_text = False
+stdout_speed = 0
 
 error_log = None
 
 @click.command()
 @click.option("--mode", "-m", "mode", prompt="Enter the mode", help="Choose phishing attack vector",
               type=click.Choice(['SMS', 'EMAIL'], case_sensitive=False), required=True)
-@click.option("--Fancy", is_flag=True, default=False, help="Toogle slow text")
-def main_menu(mode, fancy):
-    global slow_text 
-    slow_text = fancy
+@click.option("--speed","-s", "speed", prompt="Enter the speed of output 1-5", type=click.INT, default=0, help="output speed 1-5, default is 0")
+def main_menu(mode, speed) :
+    global stdout_speed
+    stdout_speed = speed * 15
     if mode.lower() == "email":
         email_menu()
     elif mode.lower() == "sms":
@@ -80,10 +79,15 @@ def main_menu(mode, fancy):
 
 
 def email_menu():
-    sprint(text=f'{success}Email! This is path to your home directory: {home_dir}')
+    sprint(f'{success}Email! This is path to your home directory: {home_dir}')
 
 def sms_menu():
-    sprint(text=f'{success}Sms! This is path to your home directory: {home_dir}')
+    sprint(f'{success}Sms! This is path to your home directory: {home_dir}')
+
+
+def server():
+    while True:
+        pass
 
 
 # Helper functions
@@ -109,64 +113,62 @@ def append(file_name, text):
 
 
 def sprint(text):
-    global slow_text
-    if slow_text:
-        for letter in text + '\n':
-            stdout.write(letter)
-            stdout.flush()
-            sleep(0.05)
+    global stdout_speed
+    for letter in text + '\n':
+        stdout.write(letter)
+        stdout.flush()
+        if stdout_speed == 0:
+            continue
+        sleep(1/stdout_speed)
+
+
+#Install packages
+def installer(package, package_name=None):
+    if package_name is None:
+        package_name = package
+    for pacman in ["pkg", "apt", "apt-get", "apk", "yum", "dnf", "brew", "pacman", "yay"]:
+        # Check if package manager is present but php isn't present
+        if is_installed(pacman):
+            if not is_installed(package):
+                sprint(f"\n{info}Installing {package}{nc}")
+                if pacman == "pacman":
+                    shell(f"sudo {pacman} -S {package_name} --noconfirm")
+                elif pacman == "apk":
+                    if is_installed("sudo"):
+                        shell(f"sudo {pacman} add {package_name}")
+                    else:
+                        shell(f"{pacman} add -y {package_name}")
+                elif is_installed("sudo"):
+                    shell(f"sudo {pacman} install -y {package_name}")
+                else:
+                    shell(f"{pacman} install -y {package_name}")
+                break
+    if is_installed("brew"):
+        if not is_installed("cloudflare"):
+            shell("brew install cloudflare/cloudflare/cloudflared")
+        if not is_installed("localxpose"):
+            shell("brew install localxpose")
+
+
+def requirements():
+    if is_installed("apt") and not is_installed("pkg"):
+        installer("ssh", "openssh-client")
     else:
-        for letter in text + '\n':
-            stdout.write(letter)
-            stdout.flush()
-            sleep(0.01)
+        installer("ssh", "openssh")
+    for package in packages:
+        if not is_installed(package):
+            sprint(f"{error}{package} cannot be installed. Install it manually!{nc}", stdout_speed)
+            exit(1)
 
-
-# Install packages
-# def installer(package, package_name=None):
-#     if package_name is None:
-#         package_name = package
-#     for pacman in ["pkg", "apt", "apt-get", "apk", "yum", "dnf", "brew", "pacman", "yay"]:
-#         # Check if package manager is present but php isn't present
-#         if is_installed(pacman):
-#             if not is_installed(package):
-#                 sprint(f"\n{info}Installing {package}{nc}")
-#                 if pacman == "pacman":
-#                     shell(f"sudo {pacman} -S {package_name} --noconfirm")
-#                 elif pacman == "apk":
-#                     if is_installed("sudo"):
-#                         shell(f"sudo {pacman} add {package_name}")
-#                     else:
-#                         shell(f"{pacman} add -y {package_name}")
-#                 elif is_installed("sudo"):
-#                     shell(f"sudo {pacman} install -y {package_name}")
-#                 else:
-#                     shell(f"{pacman} install -y {package_name}")
-#                 break
-#     if is_installed("brew"):
-#         if not is_installed("cloudflare"):
-#             shell("brew install cloudflare/cloudflare/cloudflared")
-#         if not is_installed("localxpose"):
-#             shell("brew install localxpose")
-
-
-# def requirements():
-#     installer("php")
-#     if is_installed("apt") and not is_installed("pkg"):
-#         installer("ssh", "openssh-client")
-#     else:
-#         installer("ssh", "openssh")
-#     for package in packages:
-#         if not is_installed(package):
-#             sprint(f"{error}{package} cannot be installed. Install it manually!{nc}")
-#             exit(1)
 
 
 def is_running(process):
-    exit_code = silent_shell(f"pidof {process}").wait()
-    if exit_code == 0:
-        return True
-    return False
+    return silent_shell(f"pidof {process}").wait() == 0
+
+
+def is_installed(package):
+    return silent_shell(f'command -v {package}').wait() == 0
+   
 
 
 def killer():
@@ -184,10 +186,6 @@ def killer():
                 print()
 
 
-def server():
-    while True:
-        pass
-
 
 def setup_log_file():
     global error_log
@@ -202,9 +200,5 @@ def setup_log_file():
     error_log = logs_file
 
 if __name__ == "__main__":
-    setup_log_file()
-    print(error_log)
-    server_process = multiprocessing.Process(target=server)
-    url_checker_process = multiprocessing.Process(target=check_url_shortener)
     main_menu()
 

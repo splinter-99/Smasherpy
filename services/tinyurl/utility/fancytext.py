@@ -7,7 +7,3 @@ def slow_print(text, letter_time):
         stdout.write(letter)
         stdout.flush()
         sleep(letter_time)
-    for letter in text + '\n':
-        stdout.write(letter)
-        stdout.flush()
-        sleep(letter_time)
