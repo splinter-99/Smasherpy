@@ -1,6 +1,7 @@
 import requests
 from requests.exceptions import TooManyRedirects
 from requests.exceptions import RequestException
+from requests.exceptions import ConnectionError
 
 import logging
 import random
@@ -11,6 +12,7 @@ from subprocess import Popen, PIPE
 from multiprocessing import Process
 
 from tenacity import retry, stop_after_attempt, wait_random
+from urllib3 import HTTPSConnectionPool
 
 from consts import TinyUrlPreviewException
 from colory.ColoredFormatter import ColoredFormatter
@@ -90,7 +92,7 @@ class TinyUrl:
             data = response.json()['data']
             self.redirect_url = data['url']
         elif error_code == -2:
-            logging.warning(f'Updating redirect to {url} failed!')
+            logging.warning(f'Updating redirect to {url} failed! Error: {response.text} Status code: {response.status_code}')
         else:
             raise Exception
 
@@ -98,11 +100,6 @@ class TinyUrl:
         try:
             response = requests.head(self.tiny_url, allow_redirects=True)
             if 'tiny' in response.url:
-                logging.warning(f'Preview is blocking the user to see the site for Tinyurl #{self.id} immediately...')
-                logging.warning(f'Redirected to url: {response.url}, response status code: {str(response.status_code)}')
-                logging.info(f'Changing redirect url to: {self.tunneling_service}')
-                self.update_redirect(self.tunneling_service)
-                self.tunneling_service = tunneling_service_handler.cycle_next()
                 raise TinyUrlPreviewException()
             if response.url[:8] in response.url:
                 logging.info(f'Tinyurl #{self.id} redirected to the correct domain!')
@@ -112,18 +109,38 @@ class TinyUrl:
             raise e
         except RequestException as e:
             raise e
+        except ConnectionError as e:
+            raise e
         except Exception as e:
             raise e
 
-    @retry(stop=stop_after_attempt(5), wait=wait_random(min=5, max=10), reraise=True)
+    @retry(stop=stop_after_attempt(3), wait=wait_random(min=5, max=10), reraise=True)
     def status_service(self):
         while True:
             try:
                 self.check_status()
-            except TinyUrlPreviewException as e:
+            except TinyUrlPreviewException:
                 logging.warning(f'Preview feature blocking the site for Tinyurl #{self.id}...')
+                logging.warning(f'Preview feature is blocking the user to see the site for Tinyurl #{self.id}...')
+                self.tunneling_service = tunneling_service_handler.cycle_next()
+                logging.info(f'Changing redirect url to: {self.tunneling_service}')
+                try:
+                    self.update_redirect(self.tunneling_service)
+                except Exception as e:
+                    continue
+            except ConnectionError as e:
+                error_message = str(e)
+                if "Max retries exceeded" in error_message:
+                    # Handle the specific error message
+                    logging.warning(f'{self.tiny_url} is an incorrect URL!...{e}')
+                elif "Failed to establish a new connection" in error_message:
+                    # Handle the specific error message
+                    logging.warning(f'Failed to establish a new connection for Tinyurl #{self.id}...{e}')
+                    break
+                else:
+                    pass
             except RequestException as e:
-                logging.warning(f'Error for Tinyurl #{self.id} : {e}')
+                logging.warning(f'Error for Tinyurl #{self.id}: {e}')
             except Exception as e:
                 logging.warning(f'Connection error for Tinyurl #{self.id}...{e} Please check!')
             finally:
@@ -139,15 +156,18 @@ class TinyUrl:
 
 def main_cli():
     Popen(['gnome-terminal', '--', 'tail', '-f', f'{home_dir}/.logs/logfile.log'], stdout=PIPE)
-    utility.slow_print(f'\n{bwhite}SYNOPSIS: \n'
-                       f'{bgreen}new <url> <token_index> - {green}Create new instance of tinyurl\n'
-                       f'{bgreen}select <id> - {green}Select tinyurl instance by id(use list to see all)\n'
-                       f'{bgreen}update <url> - {green}Update redirect url for selected tinyurl\n'
-                       f'{bgreen}current - {green}Display currently selected tinyurl instance\n'
-                       f'{bgreen}list - {green}List all tinyurl instances\n\n', 0.005)
+    helper = f'\n{bwhite}SYNOPSIS: \n' \
+             f'{bgreen}new <url> <token_index> - {green}Create new instance of tinyurl\n' \
+             f'{bgreen}select <id> - {green}Select tinyurl instance by id (use list to see all)\n' \
+             f'{bgreen}update <url> - {green}Update redirect url for selected tinyurl\n' \
+             f'{bgreen}current - {green}Display currently selected tinyurl instance\n' \
+             f'{bgreen}list - {green}List all tinyurl instances\n\n'
+
+    utility.slow_print(helper, 0.01)
     count = 1
     tinyurls = []
     processes = []
+    tinyurl_processes = {}
     selected = 0
 
     try:
@@ -159,7 +179,7 @@ def main_cli():
                     pass
             else:
                 tiny_url = None
-            user_input = input()
+            user_input = input().strip()
             commands = user_input.split(" ")
 
             if commands[0] == 'update' and tiny_url is not None:
@@ -169,11 +189,11 @@ def main_cli():
                 else:
                     utility.slow_print(f'{bred}Wrong command format! Look Synopsis!', 0.01)
             elif commands[0] == 'current':
-                utility.slow_print(tiny_url.__str__(), 0.01)
+                print(tinyurl.__str__())
             elif commands[0] == 'new':
                 try:
                     url = commands[1]
-                    if commands[2]:
+                    if len(commands) == 3:
                         token_index = int(commands[2])
                     else:
                         token_index = 1
@@ -192,6 +212,8 @@ def main_cli():
                     new_process.daemon = True
                     new_process.start()
                     processes.append(new_process)
+
+                    tinyurl_processes[tinyurl] = new_process
                     selected = count
                     count += 1
 
@@ -203,11 +225,17 @@ def main_cli():
             elif commands[0] == 'del':
                 for i, tinyurl in enumerate(tinyurls):
                     if tinyurl.id == commands[1]:
+                        tiny_url = tiny_url
                         tinyurls.pop(i)
-                        del tinyurl
-                        logging.info(f'{byellow}Tinyurl #{commands[1]} deleted!')
+                        logging.info(f'{byellow}Deleting Tinyurl #{commands[1]}...')
+                        logging.info(f'{byellow}Shutting down linked process...')
+                        process = tinyurl_processes.get(tiny_url)
+                        if process:
+                            process.terminate()
+                            process.join()
+                            del tinyurl_processes[tiny_url]
+                        del tiny_url
                         break
-
             elif commands[0] == 'list':
                 for tinyurl in tinyurls:
                     print(tinyurl)
@@ -220,13 +248,16 @@ def main_cli():
                     processes.terminate()
                 utility.slow_print(f'{bwhite}Thank you for using Murlocs creation!', 0.05)
                 exit(0)
+            elif 'help' in commands:
+                print(helper)
             else:
                 utility.slow_print(f'{bred}e.g Wrong command format!', 0.01)
 
             time.sleep(0.1)
     except KeyboardInterrupt:
-        for processes in processes:
-            processes.terminate()
+        for process in processes:
+            process.terminate()
+            process.join()
 
 
 #  Initialize console, file, queue handlers
