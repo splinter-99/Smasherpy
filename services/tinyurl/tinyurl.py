@@ -1,10 +1,3 @@
-#  I want this module to generate urls, and perform api functions with tinyurl. The main script will   be checking if tunnel service is down  and will change the redirect if needed
-"""
-create_redirect_url() - connects to tinyurl api and creates new tinyurl redirect to your target url
-update_redirect() - updates your redirect url in case of host failure
-
-"""
-
 import requests
 from requests.exceptions import TooManyRedirects
 from requests.exceptions import RequestException
@@ -56,7 +49,7 @@ class TinyUrl:
         self.alias = None
         self.tiny_url = None
         self.redirect_url = None
-        self.auth_token = settings.TINY_URL_AUTH_TOKENS[token]
+        self.auth_token = settings.TINY_URL_AUTH_TOKENS[token - 1]
         self.tunneling_service = tunneling_service_handler.set_tunneling_service()
         self.rebuild_headers()
 
@@ -76,7 +69,7 @@ class TinyUrl:
             self.alias = data['alias']
             self.redirect_url = redirect_url
             self.tiny_url = f'https://{tiny_domain}/{self.alias}'
-            logging.info(f'Your tinyurl redirect url is created successfully: {self.tiny_url}')
+            logging.info(f'Tinyurl redirect url is created successfully: {self.tiny_url}')
         else:
             logging.error(f'Tiny url is not created! Response: {response.text} ')
 
@@ -121,18 +114,19 @@ class TinyUrl:
         except Exception as e:
             raise e
 
-    @retry(stop=stop_after_attempt(3), wait=wait_random(min=5, max=10))
+    @retry(stop=stop_after_attempt(5), wait=wait_random(min=5, max=10), reraise=True)
     def status_service(self):
-        try:
-            self.check_status()
-        except TinyUrlPreviewException as e:
-            logging.warning(f'Preview feature blocking the site for Tinyurl #{self.id}...')
-        except RequestException as e:
-            logging.warning(f'Error for Tinyurl #{self.id} : {e}')
-        except Exception as e:
-            logging.warning(f'Connection error for Tinyurl #{self.id}...{e} Please check!')
-        finally:
-            time.sleep(random.uniform(30, 60))
+        while True:
+            try:
+                self.check_status()
+            except TinyUrlPreviewException as e:
+                logging.warning(f'Preview feature blocking the site for Tinyurl #{self.id}...')
+            except RequestException as e:
+                logging.warning(f'Error for Tinyurl #{self.id} : {e}')
+            except Exception as e:
+                logging.warning(f'Connection error for Tinyurl #{self.id}...{e} Please check!')
+            finally:
+                time.sleep(random.uniform(30, 60))
 
     def rebuild_headers(self):
         self.headers = {'Authorization': f'Bearer {self.auth_token}', 'Content-Type': 'application/json',
@@ -144,7 +138,7 @@ class TinyUrl:
 
 def main_cli():
     Popen(['gnome-terminal', '--', 'tail', '-f', f'{home_dir}/.logs/logfile.log'], stdout=PIPE)
-    utility.slow_print(f'{green}SYNOPSIS: \n'
+    utility.slow_print(f'{bblue}SYNOPSIS: \n'
                        f'{bgreen}new <url> <token_index> - {green}Create new instance of tinyurl\n'
                        f'{bgreen}select <id> - {green}Select tinyurl instance by id(use list to see all)\n'
                        f'{bgreen}update <url> - {green}Update redirect url for selected tinyurl\n'
@@ -178,7 +172,10 @@ def main_cli():
             elif commands[0] == 'new':
                 try:
                     url = commands[1]
-                    token_index = int(commands[2])
+                    if commands[2]:
+                        token_index = int(commands[2])
+                    else:
+                        token_index = 1
                     tinyurl = TinyUrl(token_index, str(count))
                     if url[:8] != 'https://':
                         tinyurl.create_redirect_url(f'https://{url}')

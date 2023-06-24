@@ -7,7 +7,7 @@ class ColoredFormatter(logging.Formatter):
     # Define color codes
     GREEN = "\033[1;32m"
     RED = "\033[1;31m"
-    YELLOW = "\033[1;31;43m"
+    YELLOW = "\033[1;31m"
     RESET = "\033[0m"
 
     def format(self, record):

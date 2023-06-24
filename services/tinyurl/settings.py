@@ -4,11 +4,11 @@ home_dir = os.getenv('HOME')
 
 
 #  File path where your config will be saved
-with open(f'{home_dir}/.auth/tokens') as f:
+with open('config') as f:
     token_data = f.read()
 
 #  File path where your config will be saved
-with open(f'/mnt/auth/tunnels.txt') as f:
+with open(f'config_tunnel') as f:
     tunnelers_data = f.read()
 
 TINY_URL_AUTH_TOKENS = token_data.split('\n')
