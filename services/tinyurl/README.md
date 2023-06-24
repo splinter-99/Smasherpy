@@ -37,6 +37,8 @@ Configure tokens / auto-redirects however you want in ***settings.py***
 
 ***list*** - list all created tinyurl instances
 
+***help*** - display cli commands overview
+
 ***exit*** - terminate the program, logs are saved in {home_dir}/.logs/logfile.log'
 ### CLI interface
 ![cli.png](cli.png)
