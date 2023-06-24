@@ -38,5 +38,9 @@ Configure tokens / auto-redirects however you want in ***settings.py***
 ***list*** - list all created tinyurl instances
 
 ***exit*** - terminate the program, logs are saved in {home_dir}/.logs/logfile.log'
+### CLI interface
+![cli.png](cli.png)
+### Logo reader terminal
+![log_read.png](log_read.png)
 
 If you have any questions, feel free to contact me
