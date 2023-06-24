@@ -1,6 +1,3 @@
 requests
-aiohttp
-retry
-environs
-click
+tenacity
 

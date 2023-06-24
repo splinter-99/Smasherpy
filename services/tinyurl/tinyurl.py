@@ -10,15 +10,17 @@ from requests.exceptions import TooManyRedirects
 from requests.exceptions import RequestException
 
 import logging
+import random
 import json
 import os
 import time
 from subprocess import Popen, PIPE
 from multiprocessing import Process
 
-from retry import retry
+from tenacity import retry, stop_after_attempt, wait_random
 
 from consts import TinyUrlPreviewException
+from colory.ColoredFormatter import ColoredFormatter
 import settings
 import utility
 import tunneling
@@ -66,7 +68,7 @@ class TinyUrl:
         data = {'url': redirect_url,
                 'alias': alias
                 }
-        logging.info(f'Creating redirect url...')
+        logging.info(f'Creating tinyurl for redirect to {redirect_url}...')
         response = requests.post(url=request_url, headers=self.headers, data=json.dumps(data))
         if utility.handle_tiny_url_response(self, response) == 0:
             data = response.json()['data']
@@ -74,11 +76,11 @@ class TinyUrl:
             self.alias = data['alias']
             self.redirect_url = redirect_url
             self.tiny_url = f'https://{tiny_domain}/{self.alias}'
-            logging.info(f'{green}Your tinyurl redirect url is created successfully: {self.tiny_url}')
+            logging.info(f'Your tinyurl redirect url is created successfully: {self.tiny_url}')
         else:
             logging.error(f'Tiny url is not created! Response: {response.text} ')
 
-    @retry(tries=3, delay=3, jitter=(1, 3))
+    @retry(stop=stop_after_attempt(3), wait=wait_random(min=2, max=4), reraise=True)
     def update_redirect(self, url):
         request_url = f"{BASE_URL}/change"
 
@@ -98,140 +100,137 @@ class TinyUrl:
         else:
             raise Exception
 
-    @retry(tries=3, delay=10, jitter=(1, 3), logger=logging.getLogger(__name__))
     def check_status(self):
         try:
             response = requests.head(self.tiny_url, allow_redirects=True)
             if 'tiny' in response.url:
-                logging.warning(f'Preview is blocking the user to see the site for tinyurl #{self.id} immediately...')
-                logging.info(f'Redirected to url: {response.url}, response status code: {str(response.status_code)}')
+                logging.warning(f'Preview is blocking the user to see the site for Tinyurl #{self.id} immediately...')
+                logging.warning(f'Redirected to url: {response.url}, response status code: {str(response.status_code)}')
                 logging.info(f'Changing redirect url to: {self.tunneling_service}')
                 self.update_redirect(self.tunneling_service)
                 self.tunneling_service = tunneling_service_handler.cycle_next()
                 raise TinyUrlPreviewException()
             if response.url[:8] in response.url:
-                logging.info(f'tinyurl #{self.id} redirected to the correct domain!')
+                logging.info(f'Tinyurl #{self.id} redirected to the correct domain!')
             else:
                 logging.info(f'..{response.text} {response.status_code}')
-        except TooManyRedirects:
-            logging.error('Too many redirects!')
+        except TooManyRedirects as e:
+            raise e
         except RequestException as e:
-            logging.error(f'Error: {e}')
+            raise e
+        except Exception as e:
+            raise e
 
+    @retry(stop=stop_after_attempt(3), wait=wait_random(min=5, max=10))
     def status_service(self):
-        while True:
-            try:
-                self.check_status()
-                time.sleep(30)
-            except TinyUrlPreviewException:
-                logging.critical(f'Deleting tiny url #{self.id}')
-                del self
-
+        try:
+            self.check_status()
+        except TinyUrlPreviewException as e:
+            logging.warning(f'Preview feature blocking the site for Tinyurl #{self.id}...')
+        except RequestException as e:
+            logging.warning(f'Error for Tinyurl #{self.id} : {e}')
+        except Exception as e:
+            logging.warning(f'Connection error for Tinyurl #{self.id}...{e} Please check!')
+        finally:
+            time.sleep(random.uniform(30, 60))
 
     def rebuild_headers(self):
         self.headers = {'Authorization': f'Bearer {self.auth_token}', 'Content-Type': 'application/json',
                         'User-Agent': 'Google Chrome'}
 
     def __str__(self):
-        return f'\033[0;33m"\nID: {self.id}\n________\n\nToken: {self.auth_token}\nURL: {self.tiny_url}\nRedirect URL: {self.redirect_url}\033[1;36m\n'
+        return f'\033[0;33m\nID: {self.id}\n________\n\nToken: {self.auth_token}\nURL: {self.tiny_url}\nRedirect URL: {self.redirect_url}\033[1;36m'
 
 
 def main_cli():
     Popen(['gnome-terminal', '--', 'tail', '-f', f'{home_dir}/.logs/logfile.log'], stdout=PIPE)
-    utility.slow_print(f'{green}SYNOPSIS: \n\n'
-                       'new <url> <token_index> - Create new instance of tinyurl\n\n'
-                       'select <id> - Select tinyurl instance by id(use list to see all)\n\n'
-                       'update <url> - Update redirect url for selected tinyurl\n\n'
-                       'client - Display currently selected tinyurl instance\n\n'
-                       'list - List all tinyurl instances\n\n', 0.01)
+    utility.slow_print(f'{green}SYNOPSIS: \n'
+                       f'{bgreen}new <url> <token_index> - {green}Create new instance of tinyurl\n'
+                       f'{bgreen}select <id> - {green}Select tinyurl instance by id(use list to see all)\n'
+                       f'{bgreen}update <url> - {green}Update redirect url for selected tinyurl\n'
+                       f'{bgreen}current - {green}Display currently selected tinyurl instance\n'
+                       f'{bgreen}list - {green}List all tinyurl instances\n\n', 0.005)
     count = 1
     tinyurls = []
     processes = []
-    selected = 1
+    selected = 0
 
-    while True:
-        tiny_url = None
-        for tinyurl in tinyurls:
-            if tinyurl.id == selected:
-                tiny_url = tinyurl
-        # Get user input without displaying it
-        user_input = input()
-        commands = user_input.split(" ")
-
-        if commands[0] == 'update' and tiny_url is not None:
-            if len(commands) > 1:
-                url = commands[1]
-                tiny_url.update_redirect(f'https://{url}')
+    try:
+        while True:
+            if tinyurls is not None:
+                try:
+                    tiny_url = tinyurls[selected - 1]
+                except IndexError:
+                    pass
             else:
-                utility.slow_print(f'{nc}e.g command: update <url>', 0.02)
-        elif commands[0] == 'client':
-            utility.slow_print(tiny_url.__str__(), 0.02)
-        elif commands[0] == 'new':
-            try:
-                url = commands[1]
-                token_index = int(commands[2])
-                tinyurl = TinyUrl(token_index, str(count))
-                if url[:8] != 'https':
-                    tinyurl.create_redirect_url(f'https://{url}')
+                tiny_url = None
+            user_input = input()
+            commands = user_input.split(" ")
+
+            if commands[0] == 'update' and tiny_url is not None:
+                if len(commands) > 1:
+                    url = commands[1]
+                    tiny_url.update_redirect(f'https://{url}')
                 else:
-                    tinyurl.create_redirect_url(url)
-                if tinyurl.redirect_url is None:
-                    del tinyurl
-                    continue
+                    utility.slow_print(f'{bred}Wrong command format! Look Synopsis!', 0.01)
+            elif commands[0] == 'current':
+                utility.slow_print(tiny_url.__str__(), 0.01)
+            elif commands[0] == 'new':
+                try:
+                    url = commands[1]
+                    token_index = int(commands[2])
+                    tinyurl = TinyUrl(token_index, str(count))
+                    if url[:8] != 'https://':
+                        tinyurl.create_redirect_url(f'https://{url}')
+                    else:
+                        tinyurl.create_redirect_url(url)
+                    if tinyurl.redirect_url is None:
+                        utility.slow_print('Tinyurl instance not created!', 0.01)
+                        del tinyurl
+                        continue
 
-                tinyurls.append(tinyurl)
-                new_process = Process(target=tinyurl.status_service)  # Update new_process value
-                new_process.daemon = True
-                new_process.start()
+                    tinyurls.append(tinyurl)
+                    new_process = Process(target=tinyurl.status_service)  # Update new_process value
+                    new_process.daemon = True
+                    new_process.start()
+                    processes.append(new_process)
+                    selected = count
+                    count += 1
 
-                processes.append(new_process)
-                selected = count
-                count += 1
+                except IndexError:
+                    utility.slow_print(f'{bred}e.g Wrong command format! Look Synopsis!', 0.01)
+                except Exception as e:
+                    utility.slow_print(f'{bred} Something went wrong!', 0.01)
 
-            except IndexError:
-                utility.slow_print(f'{red}e.g Wrong command format!', 0.02)
-            except Exception as e:
-                utility.slow_print(f'{red} Something went wrong!', 0.02)
+            elif commands[0] == 'del':
+                for i, tinyurl in enumerate(tinyurls):
+                    if tinyurl.id == commands[1]:
+                        tinyurls.pop(i)
+                        del tinyurl
+                        logging.info(f'{byellow}Tinyurl #{commands[1]} deleted!')
+                        break
 
-        elif commands[0] == 'list':
-            for tinyurl in tinyurls:
-                print(tinyurl)
-        elif commands[0] == 'select':
-            selected = commands[1]
-        else:
-            utility.slow_print(f'{red}e.g Wrong command format!', 0.01)
+            elif commands[0] == 'list':
+                for tinyurl in tinyurls:
+                    print(tinyurl)
 
-        time.sleep(0.1)
+            elif commands[0] == 'select':
+                selected = int(commands[1])
+            else:
+                utility.slow_print(f'{red}e.g Wrong command format!', 0.01)
 
-
-class ColoredFormatter(logging.Formatter):
-
-    # Define color codes
-    COOL = "\033[1;33;45m"
-    RED = "\033[1;31m"
-    YELLOW = "\033[1;33m"
-    RESET = "\033[0m"
-
-    def format(self, record):
-        # Set the appropriate color based on the log level
-        if record.levelno == logging.ERROR:
-            color_code = self.RED
-        elif record.levelno == logging.INFO:
-            color_code = self.COOL
-        else:
-            color_code = self.YELLOW
-
-        # Add color codes to the log message
-        record.msg = f"{color_code}{record.msg}{self.RESET}"
-        return super().format(record)
+            time.sleep(0.1)
+    except KeyboardInterrupt:
+        for processes in processes:
+            processes.terminate()
 
 
 #  Initialize console, file, queue handlers
 def initialize_loggers():
-    log_format: str = "%(asctime)s - %(levelname)s - %(message)s"
+    log_format = "%(asctime)s - %(levelname)s - %(message)s"
+    formatter = ColoredFormatter(log_format)
     logger = logging.getLogger('')
     logger.setLevel(logging.INFO)
-    formatter = ColoredFormatter(log_format)
 
     # Create a console handler and set the formatter
     console_handler = logging.StreamHandler()
@@ -243,9 +242,12 @@ def initialize_loggers():
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
 
+    return logger, file_handler
+
 
 if __name__ == '__main__':
-    initialize_loggers()
-    main_cli()
-
-
+    logger, file_handler = initialize_loggers()
+    try:
+        main_cli()
+    finally:
+        file_handler.close()
