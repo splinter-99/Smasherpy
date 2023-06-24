@@ -33,6 +33,7 @@ bpurple = "\033[1;35m"
 cyan = "\033[0;36m"
 bcyan = "\033[1;36m"
 white = "\033[0;37m"
+bwhite = "\033[1;37m"
 nc = "\033[00m"
 
 home_dir = os.getenv('HOME')
@@ -138,7 +139,7 @@ class TinyUrl:
 
 def main_cli():
     Popen(['gnome-terminal', '--', 'tail', '-f', f'{home_dir}/.logs/logfile.log'], stdout=PIPE)
-    utility.slow_print(f'{bblue}SYNOPSIS: \n'
+    utility.slow_print(f'\n{bwhite}SYNOPSIS: \n'
                        f'{bgreen}new <url> <token_index> - {green}Create new instance of tinyurl\n'
                        f'{bgreen}select <id> - {green}Select tinyurl instance by id(use list to see all)\n'
                        f'{bgreen}update <url> - {green}Update redirect url for selected tinyurl\n'
@@ -213,8 +214,14 @@ def main_cli():
 
             elif commands[0] == 'select':
                 selected = int(commands[1])
+            elif 'exit' in commands:
+                utility.slow_print(f'{bred}Shutting down running processes...', 0.05)
+                for processes in processes:
+                    processes.terminate()
+                utility.slow_print(f'{bwhite}Thank you for using Murlocs creation!', 0.05)
+                exit(0)
             else:
-                utility.slow_print(f'{red}e.g Wrong command format!', 0.01)
+                utility.slow_print(f'{bred}e.g Wrong command format!', 0.01)
 
             time.sleep(0.1)
     except KeyboardInterrupt:
