@@ -23,13 +23,17 @@ Configure tokens / auto-redirects however you want in ***settings.py***
 ***check_status()*** - it periodically checks validity of redirect each tinyurl instance
                  by sending http request with User-Agent: Google Chrome
 
+Log file 'logile.log' is created or appended in .logs directory located in parent user home directory
+
 ### CLI COMMANDS
 
  Once you run the script you will have a cli which has following functionality:
 
-***new [url] [token_index]***- Create new tinyurl instance that redirects to <url>, <token_index> is ***optional***
+***new [url] [token_index]***- create new tinyurl instance that redirects to <url>, <token_index> is ***optional***
 
-***select [id]*** - select tinyurl instance by their id. Useful to manually update redirect. Use 'list' to see all instances.
+***del [id]*** - delete active tinyurl instance by it's assigned id
+
+***select [id]*** - select active tinyurl instance by their id. Useful to manually update redirect. Use 'list' to see all instances.
 
 ***update [url]*** - updates redirect url of selected tinyurl instance
 
@@ -45,4 +49,4 @@ Configure tokens / auto-redirects however you want in ***settings.py***
 ### Logo reader terminal
 ![log_read.png](log_read.png)
 
-If you have any questions, feel free to contact me
+If you have any questions, feel free to message me
