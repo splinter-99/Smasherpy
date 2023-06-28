@@ -10,7 +10,7 @@ import sys
 import os
 import re
 import time
-from subprocess import Popen, PIPE
+from subprocess import Popen, PIPE, run, check_output
 from multiprocessing import Process
 
 from tenacity import retry, stop_after_attempt, wait_random
@@ -167,7 +167,7 @@ class TinyUrl:
 
 
 def main_cli():
-    Popen(['gnome-terminal', '--', 'tail', '-f', f'{home_dir}/.logs/logfile.log'], stdout=PIPE)
+    log_process = run(['gnome-terminal', '--', 'tail', '-f', f'{home_dir}/.logs/logfile.log'])
     helper = f'\n{bwhite}SYNOPSIS: \n' \
              f'{byellow}new <url> <token_index> - {yellow}Create new instance of tinyurl\n' \
              f'{byellow}select <id> - {yellow}Select tinyurl instance by their id(use list to see all)\n' \
@@ -245,7 +245,10 @@ def main_cli():
                     id_to_delete = int(commands[1])
                 else:
                     id_to_delete = selected_by_id   # delete selected if not specified
-                    if selected_by_id = 1:
+                    print(f'lol: {len(tinyurls)}')
+                    if len(tinyurls) == 1:
+                        selected_by_id = None
+                    elif selected_by_id == 1:
                         selected_by_id += 1
                     else:
                         selected_by_id -= 1
@@ -255,7 +258,8 @@ def main_cli():
                     continue
 
                 utility.slow_print(f'{byellow}Tinyurl #{id_to_delete} deleted!', 0.01)
-                utility.slow_print(f'{byellow}Tinyurl #{selected_by_id} is now selected!', 0.01)
+                if selected_by_id:
+                    utility.slow_print(f'{byellow}Tinyurl #{selected_by_id} is now selected!', 0.01)
 
                 id_tinyurls_mapping.pop(id_to_delete)
 
@@ -296,9 +300,9 @@ def main_cli():
 
             elif 'exit' in commands:
                 utility.slow_print(f'{bred}Shutting down running processes...', 0.05)
-                for processes in processes:
-                    processes.terminate()
-                utility.slow_print(f'{bwhite}Thank you for using Murloc tool \u2665', 0.05)
+                for process in processes:
+                    process.terminate()
+                utility.slow_print(f'{bwhite}Thank you for using Murloc tool {bred}\u2665', 0.05)
                 exit(0)
             elif 'help' in commands:
                 print(helper)
@@ -307,9 +311,9 @@ def main_cli():
             time.sleep(0.1)
 
     except KeyboardInterrupt:
-        for process_to_terminate in processes:
-            process_to_terminate.terminate()
-            process_to_terminate.join()
+        for process in processes:
+            processes.terminate()
+        
 
 
 def check_and_create_directory(directory_name):
